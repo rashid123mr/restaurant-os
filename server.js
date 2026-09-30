@@ -12,7 +12,7 @@ const SECRET = process.env.JWT_SECRET && process.env.JWT_SECRET !== 'change-me' 
 })();
 
 const app = express();
-app.set('trust proxy', 1); // needed when running behind Caddy, nginx, or Railway/Render
+app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(express.json({ limit: '100kb' }));
 app.use((req, res, next) => {
@@ -22,7 +22,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Small in-memory rate limiter (per IP and bucket). Use a shared store if you run several servers.
 const hits = new Map();
 const limit = (bucket, max) => (req, res, next) => {
   const k = bucket + req.ip, t = Date.now();
@@ -76,7 +75,6 @@ app.post('/api/categories', mgr, h((req) => S.addCategory(req.ctx, req.body)));
 app.delete('/api/categories/:id', mgr, h((req) => S.deleteCategory(req.ctx, req.params)));
 app.post('/api/items', mgr, h((req) => S.addItem(req.ctx, req.body)));
 app.patch('/api/items/:id', staff, h((req) => {
-  // Kitchen staff may only flip availability (sold out / back in stock)
   const body = req.ctx.role === 'staff' ? { available: req.body.available } : req.body;
   return S.updateItem(req.ctx, { ...body, item: req.params.id });
 }));
@@ -88,7 +86,7 @@ app.post('/api/tables', mgr, h((req) => S.addTable(req.ctx, req.body)));
 app.delete('/api/tables/:id', mgr, h((req) => S.deleteTable(req.ctx, req.params)));
 
 app.get('/api/orders', staff, h((req) => S.listOrders(req.ctx, req.query)));
-app.post('/api/orders', staff, h((req) => S.createOrder(req.ctx, req.body))); // staff can key in phone/walk-in orders
+app.post('/api/orders', staff, h((req) => S.createOrder(req.ctx, req.body)));
 app.patch('/api/orders/:id', staff, h((req) => S.setOrderStatus(req.ctx, { id: req.params.id, status: req.body.status })));
 
 app.get('/api/reports/sales', mgr, h((req) => S.salesReport(req.ctx, req.query)));
@@ -101,7 +99,8 @@ app.delete('/api/staff/:id', owner, h((req) => S.removeStaff(req.ctx, req.params
 app.post('/api/agent', mgr, limit('agent', 20), h((req) => runAgent({ ...req.ctx, source: 'agent' }, req.body.prompt)));
 
 /* ---- pages ---- */
-const pub = path.join(__dirname, '..', 'public');
+// __dirname is the repo root when files are flat on GitHub / Railway
+const pub = path.join(__dirname, 'public');
 app.use(express.static(pub));
 app.get('/r/:slug', (req, res) => res.sendFile(path.join(pub, 'order.html')));
 app.get('/', (req, res) => res.sendFile(path.join(pub, 'admin.html')));
