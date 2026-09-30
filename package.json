@@ -2,9 +2,9 @@
   "name": "restaurant-os",
   "version": "1.0.0",
   "description": "Multi-restaurant management system: menu, orders, tables, reports, staff and an AI agent",
-  "main": "src/server.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node server.js",
     "test": "node test/smoke.js"
   },
   "engines": {
