@@ -1,5 +1,3 @@
-// AI agent: turns one plain-English instruction into calls on the same services the dashboard uses.
-// Safety design: no delete tools, price changes capped at +/-50%, every action is written to the audit log.
 const Anthropic = require('@anthropic-ai/sdk');
 const S = require('./services');
 
