@@ -1,5 +1,6 @@
 if (process.env.NODE_ENV !== 'production') { try { require('dotenv').config(); } catch {} }
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -100,7 +101,9 @@ app.post('/api/agent', mgr, limit('agent', 20), h((req) => runAgent({ ...req.ctx
 
 /* ---- pages ---- */
 // __dirname is the repo root when files are flat on GitHub / Railway
-const pub = path.join(__dirname, 'public');
+const pub = fs.existsSync(path.join(__dirname, 'public'))
+  ? path.join(__dirname, 'public')
+  : __dirname;
 app.use(express.static(pub));
 app.get('/r/:slug', (req, res) => res.sendFile(path.join(pub, 'order.html')));
 app.get('/', (req, res) => res.sendFile(path.join(pub, 'admin.html')));
