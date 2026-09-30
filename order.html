@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Order online</title><link rel="stylesheet" href="/app.css">
+<style>
+.wrap{max-width:720px;margin:0 auto;padding:1rem}
+.hero{background:var(--ink);color:#fff;padding:1.6rem 1rem}.hero .wrap{padding:0}.hero h1{font-size:1.9rem;margin:0}
+.dish{display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:.7rem 0;border-bottom:1px solid var(--line)}
+.dish:last-child{border:0}.qty{display:flex;align-items:center;gap:.5rem}.qty button{padding:.15rem .65rem}.qty span{min-width:1.2rem;text-align:center}
+.bar{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:.8rem 1rem}.bar .wrap{display:flex;justify-content:space-between;align-items:center;padding:0}
+.opts{display:flex;gap:.5rem;flex-wrap:wrap}.opts label{display:flex;gap:.4rem;align-items:center;margin:0;color:var(--ink);border:1px solid var(--line);padding:.45rem .8rem;border-radius:6px;background:#fff}.opts input{width:auto}
+</style></head>
+<body>
+<header class="hero"><div class="wrap"><h1 id="name">Loading…</h1><div class="muted" id="sub" style="color:#c9d4d1"></div></div></header>
+<div class="wrap" id="root"></div>
+<div class="bar" id="bar" hidden><div class="wrap"><div id="sum"></div><button class="go" id="review">Review order</button></div></div>
+<div id="toast" class="toast" hidden></div>
+<script>
+const slug = location.pathname.split('/')[2], q = new URLSearchParams(location.search), tableId = q.get('table');
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let R, cart = {}, money = (n) => n;
+const toast = (m) => { const t = $('#toast'); t.textContent = m; t.className = 'toast err'; t.hidden = false; setTimeout(() => (t.hidden = true), 4000); };
+const items = () => R.menu.flatMap((c) => c.items);
+const count = () => Object.values(cart).reduce((a, b) => a + b, 0);
+const sub = () => items().reduce((s, i) => s + (cart[i.id] || 0) * i.price, 0);
+
+async function load() {
+  const r = await fetch('/api/public/' + encodeURIComponent(slug)); R = await r.json();
+  if (!r.ok) { $('#name').textContent = 'Restaurant not found'; $('#root').innerHTML = '<p class="muted">Check the link and try again.</p>'; return; }
+  document.title = 'Order from ' + R.name; $('#name').textContent = R.name;
+  money = (n) => new Intl.NumberFormat(undefined, { style: 'currency', currency: R.currency }).format(n);
+  $('#sub').textContent = tableId ? 'Ordering for your table' : 'Order for pickup or delivery';
+  menu();
+}
+function menu() {
+  $('#root').innerHTML = R.menu.length ? R.menu.map((c) => `<div class="panel" style="margin-top:1rem"><h2>${esc(c.name)}</h2>${c.items.map((i) => `<div class="dish"><div><b>${esc(i.name)}</b><div class="muted">${esc(i.description)}</div><div>${money(i.price)}</div></div>
+    <div class="qty"><button class="ghost" data-d="-1" data-id="${i.id}" aria-label="Remove one ${esc(i.name)}">−</button><span id="q${i.id}">${cart[i.id] || 0}</span><button data-d="1" data-id="${i.id}" aria-label="Add one ${esc(i.name)}">+</button></div></div>`).join('')}</div>`).join('') : '<p class="muted" style="margin-top:1rem">The menu is not available yet. Please check back soon.</p>';
+  bar();
+}
+function bar() { $('#bar').hidden = !count(); $('#sum').innerHTML = `<b>${count()} item${count() > 1 ? 's' : ''}</b> · ${money(sub())}`; }
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-id]'); if (!b) return;
+  const id = b.dataset.id; cart[id] = Math.max(0, Math.min(99, (cart[id] || 0) + Number(b.dataset.d)));
+  if (!cart[id]) delete cart[id]; const s = $('#q' + id); if (s) s.textContent = cart[id] || 0; bar();
+});
+$('#review').onclick = () => {
+  const tax = sub() * R.tax_rate / 100;
+  $('#bar').hidden = true;
+  $('#root').innerHTML = `<div class="panel" style="margin-top:1rem"><h2>Your order</h2><table>${items().filter((i) => cart[i.id]).map((i) => `<tr><td>${cart[i.id]} × ${esc(i.name)}</td><td style="text-align:right">${money(cart[i.id] * i.price)}</td></tr>`).join('')}
+    <tr><td class="muted">Tax</td><td style="text-align:right">${money(tax)}</td></tr><tr><td><b>Total</b></td><td style="text-align:right"><b>${money(sub() + tax)}</b></td></tr></table>
+    <form id="f"><label>How would you like it?</label><div class="opts">
+      ${tableId ? '<label><input type="radio" name="type" value="dine_in" checked> Eat here</label>' : ''}<label><input type="radio" name="type" value="pickup" ${tableId ? '' : 'checked'}> Pickup</label><label><input type="radio" name="type" value="delivery"> Delivery</label></div>
+      <label>Your name</label><input name="customer_name" required maxlength="80"><label>Phone number</label><input name="phone" type="tel" maxlength="30">
+      <div id="addr" hidden><label>Delivery address</label><textarea name="address" maxlength="300"></textarea></div>
+      <label>Note for the kitchen (optional)</label><input name="note" maxlength="300">
+      <p class="row"><button type="button" class="ghost" id="back">Back to menu</button><button class="go">Place order</button></p></form></div>`;
+  const f = $('#f'), sync = () => { $('#addr').hidden = f.type.value !== 'delivery'; };
+  f.onchange = sync; sync(); $('#back').onclick = menu;
+  f.onsubmit = async (e) => {
+    e.preventDefault(); const d = Object.fromEntries(new FormData(f)); d.items = Object.entries(cart).map(([id, qty]) => ({ menu_item_id: Number(id), qty }));
+    if (d.type === 'dine_in') d.table_id = tableId;
+    const btn = f.querySelector('.go'); btn.disabled = true;
+    const r = await fetch('/api/public/' + encodeURIComponent(slug) + '/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) });
+    const j = await r.json(); btn.disabled = false;
+    if (!r.ok) return toast(j.error || 'Could not place the order');
+    cart = {}; done(j);
+  };
+};
+function done(o) {
+  $('#root').innerHTML = `<div class="panel" style="margin-top:1rem"><h2>Order #${o.id} received</h2><p>Total ${money(o.total)}. The restaurant has your order.</p><p>Status: <b id="st">${o.status}</b></p><p class="muted">Your tracking code is <b>${o.track_code}</b>. Keep this page open to see updates.</p></div>`;
+  const t = setInterval(async () => {
+    const r = await fetch(`/api/public/${encodeURIComponent(slug)}/orders/${o.id}?code=${o.track_code}`); if (!r.ok) return;
+    const s = (await r.json()).status; $('#st').textContent = s; if (['completed', 'cancelled'].includes(s)) clearInterval(t);
+  }, 8000);
+}
+load();
+</script></body></html>

@@ -1,0 +1,22 @@
+{
+  "name": "restaurant-os",
+  "version": "1.0.0",
+  "description": "Multi-restaurant management system: menu, orders, tables, reports, staff and an AI agent",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node test/smoke.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3"
+  }
+}
