@@ -1,4 +1,4 @@
-require('dotenv').config({ quiet: true });
+if (process.env.NODE_ENV !== 'production') { try { require('dotenv').config(); } catch {} }
 const crypto = require('crypto');
 const path = require('path');
 const express = require('express');
