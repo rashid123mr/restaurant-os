@@ -107,5 +107,6 @@ app.get('/', (req, res) => res.sendFile(path.join(pub, 'admin.html')));
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 const PORT = process.env.PORT || 3000;
-if (require.main === module) app.listen(PORT, () => console.log(`Restaurant OS running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Restaurant OS running on http://localhost:${PORT}`));
 module.exports = app;
+
