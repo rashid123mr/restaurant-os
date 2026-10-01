@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin Console — Restaurant OS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+.login{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1rem}
+.card{background:#1e293b;border-radius:12px;padding:2rem;width:100%;max-width:400px;border:1px solid #334155}
+h1{font-size:1.5rem;margin-bottom:.25rem;color:#f1f5f9}
+.sub{color:#94a3b8;font-size:.9rem;margin-bottom:1.5rem}
+label{display:block;font-size:.85rem;color:#94a3b8;margin-bottom:.3rem;margin-top:1rem}
+input{width:100%;padding:.65rem .9rem;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:.95rem}
+input:focus{outline:none;border-color:#6366f1}
+.btn{width:100%;padding:.75rem;background:#6366f1;color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;margin-top:1.5rem}
+.btn:hover{background:#4f46e5}
+.btn.danger{background:#dc2626}.btn.danger:hover{background:#b91c1c}
+.btn.warn{background:#d97706}.btn.warn:hover{background:#b45309}
+.btn.success{background:#16a34a}.btn.success:hover{background:#15803d}
+.btn.sm{width:auto;padding:.35rem .85rem;font-size:.82rem;margin-top:0;border-radius:6px}
+.err{color:#f87171;font-size:.85rem;margin-top:.75rem;text-align:center}
+/* dashboard */
+.dash{display:none;min-height:100vh}
+.topbar{background:#1e293b;border-bottom:1px solid #334155;padding:.9rem 1.5rem;display:flex;justify-content:space-between;align-items:center}
+.topbar h1{font-size:1.2rem;color:#f1f5f9}
+.topbar span{color:#94a3b8;font-size:.85rem}
+.signout{background:none;border:1px solid #475569;color:#94a3b8;padding:.4rem .9rem;border-radius:6px;cursor:pointer;font-size:.85rem}
+.signout:hover{border-color:#6366f1;color:#6366f1}
+.content{padding:1.5rem;max-width:1100px;margin:0 auto}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.5rem}
+.stat-card{background:#1e293b;border-radius:10px;padding:1.2rem;border:1px solid #334155;text-align:center}
+.stat-card b{display:block;font-size:2rem;color:#6366f1}
+.stat-card span{font-size:.85rem;color:#94a3b8}
+.panel{background:#1e293b;border-radius:10px;border:1px solid #334155;overflow:hidden;margin-bottom:1.5rem}
+.panel-head{padding:1rem 1.5rem;border-bottom:1px solid #334155;display:flex;justify-content:space-between;align-items:center}
+.panel-head h2{font-size:1rem;color:#f1f5f9}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:.75rem 1rem;font-size:.8rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #334155}
+td{padding:.85rem 1rem;border-bottom:1px solid #1e293b;font-size:.9rem;color:#cbd5e1;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#1a2744}
+.badge{display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .75rem;border-radius:20px;font-size:.78rem;font-weight:600}
+.badge.active{background:#dcfce7;color:#166534}
+.badge.suspended{background:#fee2e2;color:#991b1b}
+.badge.pending{background:#fef9c3;color:#854d0e}
+.actions{display:flex;gap:.5rem;flex-wrap:wrap}
+.search{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:.55rem 1rem;color:#f1f5f9;font-size:.9rem;width:250px}
+.search:focus{outline:none;border-color:#6366f1}
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;background:#1e293b;border:1px solid #334155;padding:.8rem 1.2rem;border-radius:8px;font-size:.9rem;display:none;z-index:999}
+.toast.ok{border-color:#16a34a;color:#4ade80}
+.toast.err{border-color:#dc2626;color:#f87171}
+@media(max-width:700px){.actions{flex-direction:column}.search{width:100%}td,th{padding:.6rem .5rem;font-size:.8rem}}
+</style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div class="login" id="loginScreen">
+  <div class="card">
+    <h1>🛡 Admin Console</h1>
+    <p class="sub">Restaurant OS — Super Admin Access</p>
+    <form id="loginForm">
+      <label>Admin Email</label>
+      <input type="email" name="email" required autocomplete="email" placeholder="muhammadrashid49055@gmail.com">
+      <label>Password</label>
+      <input type="password" name="password" required autocomplete="current-password" placeholder="••••••••">
+      <button type="submit" class="btn">Sign in to Admin Console</button>
+      <div class="err" id="loginErr"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div class="dash" id="dashboard">
+  <div class="topbar">
+    <h1>🛡 Admin Console</h1>
+    <div style="display:flex;align-items:center;gap:1rem">
+      <span id="adminEmail"></span>
+      <button class="signout" onclick="signout()">Sign out</button>
+    </div>
+  </div>
+  <div class="content">
+    <div class="stats" id="stats"></div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>All Restaurants</h2>
+        <input class="search" type="search" id="searchBox" placeholder="Search by name or email…">
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Restaurant</th>
+            <th>Owner</th>
+            <th>Created</th>
+            <th>Orders</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let adminToken = localStorage.getItem('adminToken');
+
+function showToast(msg, type = 'ok') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast ' + type; t.style.display = 'block';
+  clearTimeout(showToast._t); showToast._t = setTimeout(() => t.style.display = 'none', 3000);
+}
+
+async function adminApi(path, method = 'GET', body) {
+  const r = await fetch('/api/admin' + path, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(adminToken ? { Authorization: 'Bearer ' + adminToken } : {}) },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const d = await r.json().catch(() => ({}));
+  if (r.status === 401) { signout(); throw new Error('Session expired'); }
+  if (!r.ok) throw new Error(d.error || 'Request failed');
+  return d;
+}
+
+// Login
+document.getElementById('loginForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector('.btn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  document.getElementById('loginErr').textContent = '';
+  try {
+    const fd = new FormData(e.target);
+    const d = await adminApi('/login', 'POST', { email: fd.get('email'), password: fd.get('password') });
+    adminToken = d.token;
+    localStorage.setItem('adminToken', adminToken);
+    document.getElementById('adminEmail').textContent = d.email;
+    showDashboard();
+  } catch (err) {
+    document.getElementById('loginErr').textContent = err.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Sign in to Admin Console';
+  }
+};
+
+function signout() {
+  adminToken = null;
+  localStorage.removeItem('adminToken');
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+}
+
+let allRestaurants = [];
+
+async function showDashboard() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  await loadRestaurants();
+}
+
+async function loadRestaurants() {
+  try {
+    allRestaurants = await adminApi('/restaurants');
+    renderStats();
+    renderTable(allRestaurants);
+  } catch (err) {
+    showToast(err.message, 'err');
+  }
+}
+
+function renderStats() {
+  const total = allRestaurants.length;
+  const active = allRestaurants.filter(r => r.status === 'active').length;
+  const suspended = allRestaurants.filter(r => r.status === 'suspended').length;
+  const pending = allRestaurants.filter(r => r.status === 'pending').length;
+  const totalOrders = allRestaurants.reduce((s, r) => s + (r.total_orders || 0), 0);
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><b>${total}</b><span>Total Restaurants</span></div>
+    <div class="stat-card"><b style="color:#4ade80">${active}</b><span>Active</span></div>
+    <div class="stat-card"><b style="color:#fbbf24">${pending}</b><span>Pending</span></div>
+    <div class="stat-card"><b style="color:#f87171">${suspended}</b><span>Suspended</span></div>
+    <div class="stat-card"><b>${totalOrders}</b><span>Total Orders</span></div>
+  `;
+}
+
+function renderTable(list) {
+  const tbody = document.getElementById('tableBody');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#475569;padding:2rem">No restaurants found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(r => `
+    <tr>
+      <td style="color:#475569">#${r.id}</td>
+      <td>
+        <div style="font-weight:600;color:#f1f5f9">${esc(r.name)}</div>
+        <div style="font-size:.8rem;color:#475569">${esc(r.slug)}</div>
+      </td>
+      <td>
+        <div>${esc(r.owner_name || '—')}</div>
+        <div style="font-size:.8rem;color:#475569">${esc(r.owner_email || '—')}</div>
+      </td>
+      <td style="font-size:.85rem">${r.created_at ? r.created_at.slice(0,10) : '—'}</td>
+      <td><span style="font-weight:600">${r.total_orders || 0}</span></td>
+      <td>
+        <span class="badge ${r.status}">${r.status}</span>
+      </td>
+      <td>
+        <div class="actions">
+          ${r.status !== 'active' ? `<button class="btn success sm" onclick="setStatus(${r.id},'active')">✓ Activate</button>` : ''}
+          ${r.status !== 'suspended' ? `<button class="btn warn sm" onclick="setStatus(${r.id},'suspended')">⏸ Suspend</button>` : ''}
+          ${r.status !== 'pending' ? `<button class="btn sm" style="background:#475569" onclick="setStatus(${r.id},'pending')">⏳ Pending</button>` : ''}
+          <button class="btn danger sm" onclick="deleteRestaurant(${r.id},'${esc(r.name)}')">🗑 Delete</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function setStatus(id, status) {
+  const labels = { active: 'Activated', suspended: 'Suspended', pending: 'Set to Pending' };
+  try {
+    await adminApi('/restaurants/' + id + '/status', 'PATCH', { status });
+    showToast('Restaurant ' + labels[status] + ' ✓');
+    await loadRestaurants();
+  } catch (err) {
+    showToast(err.message, 'err');
+  }
+}
+
+async function deleteRestaurant(id, name) {
+  if (!confirm(`Permanently delete "${name}" and ALL its data?\n\nThis cannot be undone!`)) return;
+  try {
+    await adminApi('/restaurants/' + id, 'DELETE');
+    showToast('Restaurant deleted');
+    await loadRestaurants();
+  } catch (err) {
+    showToast(err.message, 'err');
+  }
+}
+
+// Search
+document.getElementById('searchBox').oninput = (e) => {
+  const q = e.target.value.toLowerCase();
+  const filtered = allRestaurants.filter(r =>
+    r.name.toLowerCase().includes(q) ||
+    (r.owner_email || '').toLowerCase().includes(q) ||
+    (r.owner_name || '').toLowerCase().includes(q)
+  );
+  renderTable(filtered);
+};
+
+// Auto login if token exists
+if (adminToken) {
+  document.getElementById('adminEmail').textContent = '';
+  showDashboard();
+} else {
+  document.getElementById('loginScreen').style.display = 'flex';
+}
+</script>
+</body>
+</html>

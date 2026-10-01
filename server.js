@@ -114,7 +114,27 @@ app.get('/api/staff', mgr, h((req) => S.listStaff(req.ctx)));
 app.post('/api/staff', owner, h((req) => S.addStaff(req.ctx, req.body)));
 app.delete('/api/staff/:id', owner, h((req) => S.removeStaff(req.ctx, req.params)));
 
-/* ---- Google Sheets ---- */
+/* ---- admin console ---- */
+const ADMIN_SECRET = process.env.JWT_SECRET + '_admin';
+const adminAuth = (req, res, next) => {
+  try {
+    const p = jwt.verify((req.headers.authorization || '').replace('Bearer ', ''), ADMIN_SECRET);
+    if (!p.aid) return res.status(401).json({ error: 'Admin sign in required' });
+    req.admin = p;
+    next();
+  } catch { res.status(401).json({ error: 'Admin sign in required' }); }
+};
+
+app.post('/api/admin/login', limit('adminlogin', 10), h((req) => {
+  const u = S.adminLogin(req.body);
+  const token = jwt.sign({ aid: u.aid, email: u.email }, ADMIN_SECRET, { expiresIn: '12h' });
+  return { token, email: u.email };
+}));
+app.get('/api/admin/restaurants', adminAuth, h(() => S.adminListRestaurants()));
+app.patch('/api/admin/restaurants/:id/status', adminAuth, h((req) => S.adminSetStatus(req.params.id, req.body.status)));
+app.delete('/api/admin/restaurants/:id', adminAuth, h((req) => S.adminDeleteRestaurant(req.params.id)));
+
+
 app.get('/api/sheets', owner, h((req) => S.getSheetConfig(req.ctx)));
 app.post('/api/sheets', owner, h((req) => S.saveSheetConfig(req.ctx, { webhook_url: req.body.webhook_url })));
 app.delete('/api/sheets', owner, h((req) => S.deleteSheetConfig(req.ctx)));
@@ -126,6 +146,7 @@ const pub = fs.existsSync(path.join(__dirname, 'public'))
   ? path.join(__dirname, 'public')
   : __dirname;
 app.use(express.static(pub));
+app.get('/admin-console', (req, res) => res.sendFile(path.join(pub, 'admin-console.html')));
 app.get('/r/:slug', (req, res) => res.sendFile(path.join(pub, 'order.html')));
 app.get('/', (req, res) => res.sendFile(path.join(pub, 'admin.html')));
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));

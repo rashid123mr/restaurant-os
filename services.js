@@ -48,9 +48,11 @@ function registerRestaurant({ restaurant_name, name, email, password }) {
 }
 
 function login({ email, password }) {
-  const u = db.prepare('SELECT u.*, r.slug FROM users u JOIN restaurants r ON r.id=u.restaurant_id WHERE u.email=?')
+  const u = db.prepare('SELECT u.*, r.slug, r.status FROM users u JOIN restaurants r ON r.id=u.restaurant_id WHERE u.email=?')
     .get(String(email || '').toLowerCase());
   if (!u || !bcrypt.compareSync(String(password || ''), u.password_hash)) throw new HttpError(401, 'Wrong email or password');
+  if (u.status === 'suspended') throw new HttpError(403, 'This account has been suspended. Please contact support.');
+  if (u.status === 'pending') throw new HttpError(403, 'Your account is pending approval. Please wait for admin authorization.');
   return { rid: u.restaurant_id, uid: u.id, role: u.role, name: u.name, slug: u.slug };
 }
 
@@ -317,7 +319,7 @@ const auditLog = (ctx, limit = 50) => db.prepare('SELECT source,action,detail,cr
 
 /* ---------- Google Sheets ---------- */
 function saveSheetConfig(ctx, { webhook_url }) {
-  if (!webhook_url || !webhook_url.startsWith('https://script.google.com/')) throw bad('Please paste a valid Google Apps Script URL');
+  if (!webhook_url || !webhook_url.startsWith('https://')) throw bad('Please paste a valid Google Apps Script URL');
   const existing = db.prepare('SELECT id FROM google_sheets WHERE restaurant_id=?').get(ctx.rid);
   if (existing) {
     db.prepare('UPDATE google_sheets SET webhook_url=? WHERE restaurant_id=?').run(webhook_url, ctx.rid);
@@ -363,10 +365,50 @@ async function syncToSheet(ctx, event, order) {
   }
 }
 
+/* ---------- admin ---------- */
+function adminLogin({ email, password }) {
+  const db = require('./db');
+  const u = db.prepare('SELECT * FROM admin_users WHERE email=?').get(String(email || '').toLowerCase());
+  if (!u || !bcrypt.compareSync(String(password || ''), u.password_hash)) throw new HttpError(401, 'Wrong email or password');
+  return { aid: u.id, email: u.email };
+}
+
+function adminListRestaurants() {
+  return db.prepare(`
+    SELECT r.id, r.name, r.slug, r.status, r.created_at,
+      u.email AS owner_email, u.name AS owner_name,
+      (SELECT COUNT(*) FROM orders o WHERE o.restaurant_id=r.id) AS total_orders
+    FROM restaurants r
+    LEFT JOIN users u ON u.restaurant_id=r.id AND u.role='owner'
+    ORDER BY r.created_at DESC
+  `).all();
+}
+
+function adminSetStatus(rid, status) {
+  if (!['active', 'suspended', 'pending'].includes(status)) throw bad('Invalid status');
+  db.prepare('UPDATE restaurants SET status=? WHERE id=?').run(status, Number(rid));
+  return { id: rid, status };
+}
+
+function adminDeleteRestaurant(rid) {
+  rid = Number(rid);
+  db.prepare('DELETE FROM audit_log WHERE restaurant_id=?').run(rid);
+  db.prepare('DELETE FROM google_sheets WHERE restaurant_id=?').run(rid);
+  db.prepare('DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE restaurant_id=?)').run(rid);
+  db.prepare('DELETE FROM orders WHERE restaurant_id=?').run(rid);
+  db.prepare('DELETE FROM menu_items WHERE restaurant_id=?').run(rid);
+  db.prepare('DELETE FROM categories WHERE restaurant_id=?').run(rid);
+  db.prepare('DELETE FROM dining_tables WHERE restaurant_id=?').run(rid);
+  db.prepare('DELETE FROM users WHERE restaurant_id=?').run(rid);
+  db.prepare('DELETE FROM restaurants WHERE id=?').run(rid);
+  return { ok: true };
+}
+
 module.exports = {
   HttpError, registerRestaurant, login, getRestaurantBySlug, getSettings, updateSettings,
   listStaff, addStaff, removeStaff, getMenu, addCategory, deleteCategory, addItem, updateItem, deleteItem,
   setCategoryAvailability, adjustPrices, listTables, addTable, deleteTable,
   createOrder, listOrders, setOrderStatus, setPaymentStatus, trackOrder, getOrderReceipt,
   salesReport, auditLog, saveSheetConfig, getSheetConfig, deleteSheetConfig, syncToSheet,
+  adminLogin, adminListRestaurants, adminSetStatus, adminDeleteRestaurant,
 };

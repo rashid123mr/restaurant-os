@@ -7,13 +7,18 @@ if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
 
 const db = new Database(file);
 db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// Note: foreign_keys left off — integrity enforced at service layer
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS restaurants (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
   currency TEXT NOT NULL DEFAULT 'PKR', tax_rate REAL NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS admin_users (
+  id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id),
@@ -64,6 +69,20 @@ if (!cols.includes('image_url')) db.exec("ALTER TABLE menu_items ADD COLUMN imag
 
 const ocols = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 if (!ocols.includes('payment_status')) db.exec("ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'unpaid'");
+
+const rcols = db.prepare("PRAGMA table_info(restaurants)").all().map(c => c.name);
+if (!rcols.includes('status')) db.exec("ALTER TABLE restaurants ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
+
+// Seed admin user if not exists
+const bcrypt = require('bcryptjs');
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'muhammadrashid49055@gmail.com';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@1234';
+const existingAdmin = db.prepare('SELECT id FROM admin_users WHERE email=?').get(ADMIN_EMAIL);
+if (!existingAdmin) {
+  db.prepare('INSERT INTO admin_users(email,password_hash,created_at) VALUES (?,?,?)')
+    .run(ADMIN_EMAIL, bcrypt.hashSync(ADMIN_PASSWORD, 10), new Date().toISOString());
+  console.log(`Admin user created: ${ADMIN_EMAIL}`);
+}
 
 // Migrate google_sheets table — drop old schema if it has credentials column and recreate
 try {
