@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS menu_items (
   id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id),
   category_id INTEGER NOT NULL REFERENCES categories(id),
   name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', price REAL NOT NULL,
-  available INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL
+  available INTEGER NOT NULL DEFAULT 1, image_url TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS dining_tables (
   id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id),
@@ -37,7 +38,8 @@ CREATE TABLE IF NOT EXISTS dining_tables (
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id),
   type TEXT NOT NULL, table_id INTEGER, customer_name TEXT NOT NULL, phone TEXT, address TEXT,
-  note TEXT, status TEXT NOT NULL DEFAULT 'new', subtotal REAL NOT NULL, tax REAL NOT NULL,
+  note TEXT, status TEXT NOT NULL DEFAULT 'new', payment_status TEXT NOT NULL DEFAULT 'unpaid',
+  subtotal REAL NOT NULL, tax REAL NOT NULL,
   total REAL NOT NULL, track_code TEXT NOT NULL, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS order_items (
@@ -48,8 +50,19 @@ CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL, user_id INTEGER,
   source TEXT NOT NULL, action TEXT NOT NULL, detail TEXT, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS google_sheets (
+  id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL UNIQUE REFERENCES restaurants(id),
+  sheet_id TEXT NOT NULL, credentials TEXT NOT NULL, created_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_orders_r ON orders(restaurant_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_items_r ON menu_items(restaurant_id);
 `);
+
+// Migrate existing databases — add new columns if they don't exist yet
+const cols = db.prepare("PRAGMA table_info(menu_items)").all().map(c => c.name);
+if (!cols.includes('image_url')) db.exec("ALTER TABLE menu_items ADD COLUMN image_url TEXT NOT NULL DEFAULT ''");
+
+const ocols = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
+if (!ocols.includes('payment_status')) db.exec("ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'unpaid'");
 
 module.exports = db;

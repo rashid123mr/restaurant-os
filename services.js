@@ -121,7 +121,7 @@ function findItem(ctx, ref) {
 
 function getMenu(ctx, { onlyAvailable = false } = {}) {
   const cats = db.prepare('SELECT id,name FROM categories WHERE restaurant_id=? ORDER BY sort,id').all(ctx.rid);
-  const items = db.prepare(`SELECT id,category_id,name,description,price,available FROM menu_items WHERE restaurant_id=? ${onlyAvailable ? 'AND available=1' : ''} ORDER BY id`).all(ctx.rid);
+  const items = db.prepare(`SELECT id,category_id,name,description,price,available,image_url FROM menu_items WHERE restaurant_id=? ${onlyAvailable ? 'AND available=1' : ''} ORDER BY id`).all(ctx.rid);
   return cats.map((c) => ({ ...c, items: items.filter((i) => i.category_id === c.id) }));
 }
 
@@ -143,10 +143,11 @@ function addItem(ctx, d) {
   const name = str(d.name, 'name', 100);
   const price = num(d.price, 'price');
   const cid = categoryId(ctx, d.category);
-  const id = Number(db.prepare('INSERT INTO menu_items(restaurant_id,category_id,name,description,price,available,created_at) VALUES (?,?,?,?,?,?,?)')
-    .run(ctx.rid, cid, name, String(d.description || '').slice(0, 500), r2(price), d.available === false ? 0 : 1, now()).lastInsertRowid);
+  const image_url = d.image_url ? String(d.image_url).slice(0, 500) : '';
+  const id = Number(db.prepare('INSERT INTO menu_items(restaurant_id,category_id,name,description,price,available,image_url,created_at) VALUES (?,?,?,?,?,?,?,?)')
+    .run(ctx.rid, cid, name, String(d.description || '').slice(0, 500), r2(price), d.available === false ? 0 : 1, image_url, now()).lastInsertRowid);
   audit(ctx, 'item.add', { id, name, price });
-  return { id, name, price: r2(price) };
+  return { id, name, price: r2(price), image_url };
 }
 
 function updateItem(ctx, d) {
@@ -157,16 +158,17 @@ function updateItem(ctx, d) {
     price: d.price !== undefined ? r2(num(d.price, 'price')) : it.price,
     available: d.available !== undefined ? bool(d.available) : it.available,
     category_id: d.category !== undefined ? categoryId(ctx, d.category) : it.category_id,
+    image_url: d.image_url !== undefined ? String(d.image_url).slice(0, 500) : (it.image_url || ''),
   };
-  db.prepare('UPDATE menu_items SET name=?,description=?,price=?,available=?,category_id=? WHERE id=?')
-    .run(next.name, next.description, next.price, next.available, next.category_id, it.id);
+  db.prepare('UPDATE menu_items SET name=?,description=?,price=?,available=?,category_id=?,image_url=? WHERE id=?')
+    .run(next.name, next.description, next.price, next.available, next.category_id, next.image_url, it.id);
   audit(ctx, 'item.update', { id: it.id, before: { name: it.name, price: it.price, available: it.available }, after: next });
   return { id: it.id, ...next };
 }
 
 function deleteItem(ctx, { id }) {
   const it = findItem(ctx, id);
-  db.prepare('DELETE FROM menu_items WHERE id=?').run(it.id); // past orders keep their own copy of name/price
+  db.prepare('DELETE FROM menu_items WHERE id=?').run(it.id);
   audit(ctx, 'item.delete', { id: it.id, name: it.name });
 }
 
@@ -242,7 +244,9 @@ function createOrder(ctx, d) {
     const ins = db.prepare('INSERT INTO order_items(order_id,menu_item_id,name,price,qty) VALUES (?,?,?,?,?)');
     lines.forEach((l) => ins.run(id, l.it.id, l.it.name, l.it.price, l.qty));
     audit(ctx, 'order.create', { id, total: r2(subtotal + tax) });
-    return { id, track_code: code, subtotal, tax, total: r2(subtotal + tax), status: 'new' };
+    // Sync to Google Sheets if connected
+    syncToSheet(ctx, 'new', { id, customer, type, total: r2(subtotal + tax), created_at: now() }).catch(() => {});
+    return { id, track_code: code, subtotal, tax, total: r2(subtotal + tax), status: 'new', payment_status: 'unpaid' };
   });
 }
 
@@ -261,7 +265,21 @@ function setOrderStatus(ctx, { id, status }) {
   if (!FLOW[o.status].includes(status)) throw bad(`An order that is ${o.status} cannot become ${status}`);
   db.prepare('UPDATE orders SET status=? WHERE id=?').run(status, o.id);
   audit(ctx, 'order.status', { id: o.id, from: o.status, to: status });
+  // Sync completed orders to Google Sheets
+  if (status === 'completed') {
+    const items = db.prepare('SELECT name,price,qty FROM order_items WHERE order_id=?').all(o.id);
+    syncToSheet(ctx, 'completed', { id: o.id, customer_name: o.customer_name, type: o.type, total: o.total, created_at: o.created_at }).catch(() => {});
+  }
   return { id: o.id, status };
+}
+
+function setPaymentStatus(ctx, { id, payment_status }) {
+  if (!['paid', 'unpaid'].includes(payment_status)) throw bad('payment_status must be paid or unpaid');
+  const o = db.prepare('SELECT * FROM orders WHERE id=? AND restaurant_id=?').get(Number(id), ctx.rid);
+  if (!o) throw notFound('Order not found');
+  db.prepare('UPDATE orders SET payment_status=? WHERE id=?').run(payment_status, o.id);
+  audit(ctx, 'order.payment', { id: o.id, payment_status });
+  return { id: o.id, payment_status };
 }
 
 function trackOrder(ctx, { id, code }) {
@@ -269,6 +287,15 @@ function trackOrder(ctx, { id, code }) {
   if (!o || o.track_code !== String(code || '').toUpperCase()) throw notFound('Order not found');
   const { track_code, ...pub } = o;
   return pub;
+}
+
+function getOrderReceipt(ctx, { id }) {
+  const o = db.prepare('SELECT o.*, t.label AS table_label FROM orders o LEFT JOIN dining_tables t ON t.id=o.table_id WHERE o.id=? AND o.restaurant_id=?').get(Number(id), ctx.rid);
+  if (!o) throw notFound('Order not found');
+  const items = db.prepare('SELECT name,price,qty FROM order_items WHERE order_id=?').all(o.id);
+  const restaurant = getSettings(ctx);
+  const { track_code, ...order } = o;
+  return { ...order, items, restaurant };
 }
 
 /* ---------- reports ---------- */
@@ -288,9 +315,57 @@ function salesReport(ctx, { from, to } = {}) {
 
 const auditLog = (ctx, limit = 50) => db.prepare('SELECT source,action,detail,created_at FROM audit_log WHERE restaurant_id=? ORDER BY id DESC LIMIT ?').all(ctx.rid, Math.min(limit, 200));
 
+/* ---------- Google Sheets ---------- */
+function saveSheetConfig(ctx, { sheet_id, credentials }) {
+  if (!sheet_id || !credentials) throw bad('sheet_id and credentials are required');
+  try { JSON.parse(credentials); } catch { throw bad('credentials must be valid JSON'); }
+  const existing = db.prepare('SELECT id FROM google_sheets WHERE restaurant_id=?').get(ctx.rid);
+  if (existing) {
+    db.prepare('UPDATE google_sheets SET sheet_id=?,credentials=? WHERE restaurant_id=?').run(sheet_id, credentials, ctx.rid);
+  } else {
+    db.prepare('INSERT INTO google_sheets(restaurant_id,sheet_id,credentials,created_at) VALUES (?,?,?,?)').run(ctx.rid, sheet_id, credentials, now());
+  }
+  audit(ctx, 'sheets.connect', { sheet_id });
+  return { ok: true, sheet_id };
+}
+
+function getSheetConfig(ctx) {
+  return db.prepare('SELECT sheet_id FROM google_sheets WHERE restaurant_id=?').get(ctx.rid) || null;
+}
+
+function deleteSheetConfig(ctx) {
+  db.prepare('DELETE FROM google_sheets WHERE restaurant_id=?').run(ctx.rid);
+  audit(ctx, 'sheets.disconnect', {});
+}
+
+async function syncToSheet(ctx, event, order) {
+  const config = db.prepare('SELECT sheet_id,credentials FROM google_sheets WHERE restaurant_id=?').get(ctx.rid);
+  if (!config) return;
+  try {
+    const { GoogleAuth } = require('google-auth-library');
+    const { google } = require('googleapis');
+    const credentials = JSON.parse(config.credentials);
+    const auth = new GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+    const sheets = google.sheets({ version: 'v4', auth });
+    const row = [
+      order.id, event, order.customer_name || '', order.type || '',
+      order.total, order.created_at, new Date().toISOString()
+    ];
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: config.sheet_id,
+      range: 'Sheet1!A:G',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [row] },
+    });
+  } catch (e) {
+    console.error('Google Sheets sync failed:', e.message);
+  }
+}
+
 module.exports = {
   HttpError, registerRestaurant, login, getRestaurantBySlug, getSettings, updateSettings,
   listStaff, addStaff, removeStaff, getMenu, addCategory, deleteCategory, addItem, updateItem, deleteItem,
   setCategoryAvailability, adjustPrices, listTables, addTable, deleteTable,
-  createOrder, listOrders, setOrderStatus, trackOrder, salesReport, auditLog,
+  createOrder, listOrders, setOrderStatus, setPaymentStatus, trackOrder, getOrderReceipt,
+  salesReport, auditLog, saveSheetConfig, getSheetConfig, deleteSheetConfig, syncToSheet,
 };

@@ -1,3 +1,4 @@
+// Load .env only in local development; Railway injects env vars automatically
 if (process.env.NODE_ENV !== 'production') { try { require('dotenv').config(); } catch {} }
 const crypto = require('crypto');
 const fs = require('fs');
@@ -69,6 +70,20 @@ app.post('/api/public/:slug/orders', limit('order', 20), h((req) => {
 }));
 app.get('/api/public/:slug/orders/:id', h((req) => S.trackOrder({ rid: S.getRestaurantBySlug(req.params.slug).id }, { id: req.params.id, code: req.query.code })));
 
+/* ---- image upload (Cloudinary) ---- */
+app.post('/api/upload', mgr, h(async (req) => {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  if (!cloudName || !apiKey || !apiSecret) throw new S.HttpError(503, 'Image uploads are not configured. Add CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET to your environment variables.');
+  // Return signed upload params so browser uploads directly to Cloudinary
+  const timestamp = Math.round(Date.now() / 1000);
+  const folder = `restaurant-os/${req.ctx.rid}`;
+  const toSign = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
+  const signature = crypto.createHash('sha1').update(toSign).digest('hex');
+  return { cloudName, apiKey, timestamp, folder, signature };
+}));
+
 /* ---- dashboard API ---- */
 app.get('/api/me', staff, h((req) => ({ ...S.getSettings(req.ctx), role: req.ctx.role })));
 app.get('/api/menu', staff, h((req) => S.getMenu(req.ctx)));
@@ -89,6 +104,8 @@ app.delete('/api/tables/:id', mgr, h((req) => S.deleteTable(req.ctx, req.params)
 app.get('/api/orders', staff, h((req) => S.listOrders(req.ctx, req.query)));
 app.post('/api/orders', staff, h((req) => S.createOrder(req.ctx, req.body)));
 app.patch('/api/orders/:id', staff, h((req) => S.setOrderStatus(req.ctx, { id: req.params.id, status: req.body.status })));
+app.patch('/api/orders/:id/payment', staff, h((req) => S.setPaymentStatus(req.ctx, { id: req.params.id, payment_status: req.body.payment_status })));
+app.get('/api/orders/:id/receipt', staff, h((req) => S.getOrderReceipt(req.ctx, { id: req.params.id })));
 
 app.get('/api/reports/sales', mgr, h((req) => S.salesReport(req.ctx, req.query)));
 app.get('/api/audit', mgr, h((req) => S.auditLog(req.ctx)));
@@ -97,10 +114,14 @@ app.get('/api/staff', mgr, h((req) => S.listStaff(req.ctx)));
 app.post('/api/staff', owner, h((req) => S.addStaff(req.ctx, req.body)));
 app.delete('/api/staff/:id', owner, h((req) => S.removeStaff(req.ctx, req.params)));
 
+/* ---- Google Sheets ---- */
+app.get('/api/sheets', owner, h((req) => S.getSheetConfig(req.ctx)));
+app.post('/api/sheets', owner, h((req) => S.saveSheetConfig(req.ctx, req.body)));
+app.delete('/api/sheets', owner, h((req) => S.deleteSheetConfig(req.ctx)));
+
 app.post('/api/agent', mgr, limit('agent', 20), h((req) => runAgent({ ...req.ctx, source: 'agent' }, req.body.prompt)));
 
 /* ---- pages ---- */
-// __dirname is the repo root when files are flat on GitHub / Railway
 const pub = fs.existsSync(path.join(__dirname, 'public'))
   ? path.join(__dirname, 'public')
   : __dirname;
@@ -112,4 +133,3 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Restaurant OS running on http://localhost:${PORT}`));
 module.exports = app;
-

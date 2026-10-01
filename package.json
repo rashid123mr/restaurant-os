@@ -5,10 +5,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "build": "npm ci",
     "test": "node test/smoke.js"
   },
   "engines": {
-   "node": "22.x"
+    "node": "22.x"
   },
   "license": "UNLICENSED",
   "dependencies": {
@@ -17,6 +18,8 @@
     "better-sqlite3": "^13.0.3",
     "dotenv": "^18.0.4",
     "express": "^5.2.1",
+    "google-auth-library": "^9.15.1",
+    "googleapis": "^144.0.0",
     "jsonwebtoken": "^9.0.3"
   }
 }
