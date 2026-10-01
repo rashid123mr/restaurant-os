@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE TABLE IF NOT EXISTS google_sheets (
   id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL UNIQUE REFERENCES restaurants(id),
-  sheet_id TEXT NOT NULL, credentials TEXT NOT NULL, created_at TEXT NOT NULL
+  webhook_url TEXT NOT NULL, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_orders_r ON orders(restaurant_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_items_r ON menu_items(restaurant_id);
@@ -64,5 +64,17 @@ if (!cols.includes('image_url')) db.exec("ALTER TABLE menu_items ADD COLUMN imag
 
 const ocols = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 if (!ocols.includes('payment_status')) db.exec("ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'unpaid'");
+
+// Migrate google_sheets table — drop old schema if it has credentials column and recreate
+try {
+  const gcols = db.prepare("PRAGMA table_info(google_sheets)").all().map(c => c.name);
+  if (gcols.includes('credentials')) {
+    db.exec("DROP TABLE google_sheets");
+    db.exec(`CREATE TABLE IF NOT EXISTS google_sheets (
+      id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL UNIQUE REFERENCES restaurants(id),
+      webhook_url TEXT NOT NULL, created_at TEXT NOT NULL
+    )`);
+  }
+} catch(e) {}
 
 module.exports = db;

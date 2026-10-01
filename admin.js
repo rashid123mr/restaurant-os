@@ -270,18 +270,40 @@ const VIEWS = {
         <div><label>Role</label><select name="role"><option value="staff">Staff (orders, sold-out)</option><option value="manager">Manager (menu, reports, assistant)</option></select></div>
         <button class="go">Add</button></form></div>` : ''}
       ${isOwner ? `<div class="panel"><h3>Google Sheets Integration</h3>
-        <p class="muted">Automatically log new and completed orders to a Google Sheet. You need a Google Service Account JSON key.</p>
+        <p class="muted">Automatically log new and completed orders to a Google Sheet — free, no API keys needed.</p>
+        <p class="muted"><b>How to set up (2 minutes):</b><br>
+        1. Open your Google Sheet → click <b>Extensions → Apps Script</b><br>
+        2. Delete any existing code and paste the script from below<br>
+        3. Click <b>Deploy → New deployment → Web app</b><br>
+        4. Set "Who has access" to <b>Anyone</b> → click Deploy<br>
+        5. Copy the Web app URL and paste it below</p>
+        <details style="margin-bottom:1rem"><summary style="cursor:pointer;color:var(--basil)">Show Apps Script code to paste</summary>
+        <pre style="font-size:11px;background:#f4f4f4;padding:1rem;border-radius:6px;overflow:auto">function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    // Add header row if sheet is empty
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(['Order ID','Event','Customer','Type','Total','Order Time','Synced At']);
+    }
+    sheet.appendRow([
+      data.order_id, data.event, data.customer,
+      data.type, data.total, data.created_at, data.synced_at
+    ]);
+    return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({error:err.message})).setMimeType(ContentService.MimeType.JSON);
+  }
+}</pre></details>
         <form id="sheetform">
-          <label>Google Sheet ID <span class="muted">(from the URL: spreadsheets/d/<b>THIS_PART</b>/edit)</span></label>
-          <input name="sheet_id" required placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" value="${sheet ? esc(sheet.sheet_id) : ''}">
-          <label>Service Account JSON key</label>
-          <textarea name="credentials" required placeholder='{"type":"service_account","project_id":"..."}' style="font-size:12px;height:120px">${sheet ? '(already saved — paste new key to update)' : ''}</textarea>
+          <label>Google Apps Script Web App URL</label>
+          <input name="webhook_url" required placeholder="https://script.google.com/macros/s/..." value="${sheet ? esc(sheet.webhook_url) : ''}">
           <p class="row">
             <button class="go">Save & connect</button>
             ${sheet ? '<button type="button" class="warn" id="disconnectSheet">Disconnect</button>' : ''}
           </p>
         </form>
-        ${sheet ? `<p class="muted" style="color:green">✓ Connected to sheet: ${esc(sheet.sheet_id)}</p>` : '<p class="muted">Not connected.</p>'}
+        ${sheet ? `<p class="muted" style="color:green">✓ Connected</p>` : '<p class="muted">Not connected yet.</p>'}
       </div>` : ''}`;
 
     if (isOwner) {
@@ -289,7 +311,6 @@ const VIEWS = {
       $('#stform').onsubmit = (e) => { e.preventDefault(); run(async () => { await api('/staff', 'POST', form(e.target)); VIEWS.settings(); }); };
       $('#sheetform').onsubmit = (e) => { e.preventDefault(); run(async () => {
         const d = form(e.target);
-        if (d.credentials.startsWith('(already')) { toast('Paste a new JSON key to update, or leave as is', true); return; }
         await api('/sheets', 'POST', d); toast('Google Sheets connected!'); VIEWS.settings();
       }); };
       const disc = $('#disconnectSheet');

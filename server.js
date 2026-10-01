@@ -116,7 +116,7 @@ app.delete('/api/staff/:id', owner, h((req) => S.removeStaff(req.ctx, req.params
 
 /* ---- Google Sheets ---- */
 app.get('/api/sheets', owner, h((req) => S.getSheetConfig(req.ctx)));
-app.post('/api/sheets', owner, h((req) => S.saveSheetConfig(req.ctx, req.body)));
+app.post('/api/sheets', owner, h((req) => S.saveSheetConfig(req.ctx, { webhook_url: req.body.webhook_url })));
 app.delete('/api/sheets', owner, h((req) => S.deleteSheetConfig(req.ctx)));
 
 app.post('/api/agent', mgr, limit('agent', 20), h((req) => runAgent({ ...req.ctx, source: 'agent' }, req.body.prompt)));

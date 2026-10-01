@@ -316,21 +316,20 @@ function salesReport(ctx, { from, to } = {}) {
 const auditLog = (ctx, limit = 50) => db.prepare('SELECT source,action,detail,created_at FROM audit_log WHERE restaurant_id=? ORDER BY id DESC LIMIT ?').all(ctx.rid, Math.min(limit, 200));
 
 /* ---------- Google Sheets ---------- */
-function saveSheetConfig(ctx, { sheet_id, credentials }) {
-  if (!sheet_id || !credentials) throw bad('sheet_id and credentials are required');
-  try { JSON.parse(credentials); } catch { throw bad('credentials must be valid JSON'); }
+function saveSheetConfig(ctx, { webhook_url }) {
+  if (!webhook_url || !webhook_url.startsWith('https://script.google.com/')) throw bad('Please paste a valid Google Apps Script URL');
   const existing = db.prepare('SELECT id FROM google_sheets WHERE restaurant_id=?').get(ctx.rid);
   if (existing) {
-    db.prepare('UPDATE google_sheets SET sheet_id=?,credentials=? WHERE restaurant_id=?').run(sheet_id, credentials, ctx.rid);
+    db.prepare('UPDATE google_sheets SET webhook_url=? WHERE restaurant_id=?').run(webhook_url, ctx.rid);
   } else {
-    db.prepare('INSERT INTO google_sheets(restaurant_id,sheet_id,credentials,created_at) VALUES (?,?,?,?)').run(ctx.rid, sheet_id, credentials, now());
+    db.prepare('INSERT INTO google_sheets(restaurant_id,webhook_url,created_at) VALUES (?,?,?)').run(ctx.rid, webhook_url, now());
   }
-  audit(ctx, 'sheets.connect', { sheet_id });
-  return { ok: true, sheet_id };
+  audit(ctx, 'sheets.connect', { webhook_url });
+  return { ok: true, webhook_url };
 }
 
 function getSheetConfig(ctx) {
-  return db.prepare('SELECT sheet_id FROM google_sheets WHERE restaurant_id=?').get(ctx.rid) || null;
+  return db.prepare('SELECT webhook_url FROM google_sheets WHERE restaurant_id=?').get(ctx.rid) || null;
 }
 
 function deleteSheetConfig(ctx) {
@@ -339,23 +338,25 @@ function deleteSheetConfig(ctx) {
 }
 
 async function syncToSheet(ctx, event, order) {
-  const config = db.prepare('SELECT sheet_id,credentials FROM google_sheets WHERE restaurant_id=?').get(ctx.rid);
+  const config = db.prepare('SELECT webhook_url FROM google_sheets WHERE restaurant_id=?').get(ctx.rid);
   if (!config) return;
   try {
-    const { GoogleAuth } = require('google-auth-library');
-    const { google } = require('googleapis');
-    const credentials = JSON.parse(config.credentials);
-    const auth = new GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
-    const sheets = google.sheets({ version: 'v4', auth });
-    const row = [
-      order.id, event, order.customer_name || '', order.type || '',
-      order.total, order.created_at, new Date().toISOString()
-    ];
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: config.sheet_id,
-      range: 'Sheet1!A:G',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [row] },
+    const https = require('https');
+    const payload = JSON.stringify({
+      event,
+      order_id: order.id,
+      customer: order.customer_name || '',
+      type: order.type || '',
+      total: order.total,
+      created_at: order.created_at,
+      synced_at: new Date().toISOString(),
+    });
+    const url = new URL(config.webhook_url);
+    await new Promise((resolve, reject) => {
+      const req = https.request({ hostname: url.hostname, path: url.pathname + url.search, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, (res) => { res.resume(); resolve(); });
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
     });
   } catch (e) {
     console.error('Google Sheets sync failed:', e.message);
