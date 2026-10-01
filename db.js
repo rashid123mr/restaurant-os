@@ -76,7 +76,7 @@ if (!rcols.includes('status')) db.exec("ALTER TABLE restaurants ADD COLUMN statu
 // Seed admin user if not exists
 const bcrypt = require('bcryptjs');
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'muhammadrashid49055@gmail.com';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@1234';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'MR54321mr@';
 const existingAdmin = db.prepare('SELECT id FROM admin_users WHERE email=?').get(ADMIN_EMAIL);
 if (!existingAdmin) {
   db.prepare('INSERT INTO admin_users(email,password_hash,created_at) VALUES (?,?,?)')
